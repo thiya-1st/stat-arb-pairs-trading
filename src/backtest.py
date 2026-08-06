@@ -1,3 +1,5 @@
+from src.trading_strategy import compute_spread, compute_rolling_z, generate_signals
+
 import yfinance as yf
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -173,7 +175,7 @@ def calculate_cagr(
     cagr = (ending_value / capital) ** (1 / num_years) - 1
     return cagr
 
-def benchmark_returns(benchmark_ticker: str, start_date: str, end_date: str) -> pd.Series:
+def calculate_benchmark_returns(benchmark_ticker: str, start_date: str, end_date: str) -> pd.Series:
     """
     Download and compute daily percentage returns for a benchmark ticker.
 
@@ -222,3 +224,51 @@ def plot_strategy_vs_benchmark(
     if save:
         plt.savefig(f"../figures/{t1}_{t2}_equity_curve_vs_{benchmark_ticker}_benchmark.png", dpi=150, bbox_inches="tight")
     plt.show()
+
+def run_backtest(
+        adj_close_df: pd.DataFrame, 
+        capital: float,
+        trade_cost_rate: float,
+        cointegrated_pairs: list[tuple],
+        start_date: str,
+        end_date: str,
+        benchmark_ticker: str,
+        save_plots: bool = False
+    ) -> None:
+    """
+    Run the full pairs trading backtest pipeline for a list of cointegrated 
+    pairs: computes spread, z-score, signals, daily PnL, performance metrics, 
+    and plots (equity curve and benchmark comparison) for each pair.
+
+    Args:
+        adj_close_df: DataFrame of adjusted close prices (columns = tickers).
+        capital: dollar amount allocated per trade.
+        trade_cost_rate: transaction cost rate applied on entry/exit (e.g. 0.001 = 0.1%).
+        cointegrated_pairs: list of (ticker1, ticker2, correlation, pvalue) tuples.
+        start_date: start date string for benchmark data (e.g. "2017-01-01").
+        end_date: end date string for benchmark data (e.g. "2025-01-01").
+        benchmark_ticker: ticker symbol of the benchmark (e.g. "SPY").
+        save_plots: if True, saves plots to ../figures/.
+
+    Returns:
+        None. Prints performance metrics and displays plots for each pair.
+    """
+    benchmark_returns = calculate_benchmark_returns(benchmark_ticker, start_date, end_date)
+
+    for pair in cointegrated_pairs:
+        alpha, beta, spread = compute_spread(adj_close_df, pair)
+        rolling_z = compute_rolling_z(spread, 60)
+        signals = generate_signals(rolling_z)
+
+        daily_pnl = calculate_daily_pnl(adj_close_df, capital, trade_cost_rate, pair, signals, beta)
+        daily_pnl_cumsum = daily_pnl.cumsum()
+        plot_equity_curve(capital, pair, daily_pnl_cumsum, save_plots)
+
+        sharpe = calculate_sharpe(capital, daily_pnl)
+        max_drawdown = calculate_max_drawdown(daily_pnl_cumsum)
+        cagr = calculate_cagr(adj_close_df, capital, daily_pnl_cumsum)
+        print(f"Sharpe: {sharpe}")
+        print(f"Maximum drawdown: {max_drawdown}")
+        print(f"CAGR: {cagr}")
+
+        plot_strategy_vs_benchmark(capital, daily_pnl_cumsum, pair, benchmark_ticker, benchmark_returns, save_plots)
