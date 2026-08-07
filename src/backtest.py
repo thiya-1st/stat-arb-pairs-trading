@@ -225,6 +225,15 @@ def plot_strategy_vs_benchmark(
         plt.savefig(f"../figures/{t1}_{t2}_equity_curve_vs_{benchmark_ticker}_benchmark.png", dpi=150, bbox_inches="tight")
     plt.show()
 
+def sort_metrics(metrics_df):
+    metrics_df = metrics_df.sort_values("sharpe", ascending = False)
+    metrics_df["sharpe"] = metrics_df["sharpe"].round(3)
+    metrics_df["max_drawdown"] = metrics_df["max_drawdown"].round(2)
+    metrics_df["cagr"] = metrics_df["cagr"].round(4)
+    metrics_df = metrics_df.reset_index(drop = True)
+    metrics_df.to_csv("../data/processed/backtest_metrics.csv", index = False)
+    return metrics_df
+
 def run_backtest(
         adj_close_df: pd.DataFrame, 
         capital: float,
@@ -233,6 +242,7 @@ def run_backtest(
         start_date: str,
         end_date: str,
         benchmark_ticker: str,
+        num_plots: int,
         save_plots: bool = False
     ) -> pd.DataFrame:
     """
@@ -248,15 +258,17 @@ def run_backtest(
         start_date: start date string for benchmark data (e.g. "2017-01-01").
         end_date: end date string for benchmark data (e.g. "2025-01-01").
         benchmark_ticker: ticker symbol of the benchmark (e.g. "SPY").
+        num_plots: number of plots to be shown.
         save_plots: if True, saves plots to ../figures/.
 
     Returns:
         metrics_df: a dataframe of performance metrics.
-        Displays plots for each pair.
+        Displays plots for the number of pairs user wants to be plotted.
     """
     metrics_list = []
     benchmark_returns = calculate_benchmark_returns(benchmark_ticker, start_date, end_date)
 
+    plots = 0
     for pair in cointegrated_pairs:
         alpha, beta, spread = compute_spread(adj_close_df, pair)
         rolling_z = compute_rolling_z(spread, 60)
@@ -264,7 +276,6 @@ def run_backtest(
 
         daily_pnl = calculate_daily_pnl(adj_close_df, capital, trade_cost_rate, pair, signals, beta)
         daily_pnl_cumsum = daily_pnl.cumsum()
-        plot_equity_curve(capital, pair, daily_pnl_cumsum, save_plots)
 
         sharpe = calculate_sharpe(capital, daily_pnl)
         max_drawdown = calculate_max_drawdown(daily_pnl_cumsum)
@@ -276,7 +287,10 @@ def run_backtest(
             "cagr": cagr
         })
 
-        plot_strategy_vs_benchmark(capital, daily_pnl_cumsum, pair, benchmark_ticker, benchmark_returns, save_plots)
+        if plots < num_plots:
+            plot_equity_curve(capital, pair, daily_pnl_cumsum, save_plots)
+            plot_strategy_vs_benchmark(capital, daily_pnl_cumsum, pair, benchmark_ticker, benchmark_returns, save_plots)
+            plots += 1
 
     metrics_df = pd.DataFrame(metrics_list)
-    return metrics_df
+    return sort_metrics(metrics_df)
