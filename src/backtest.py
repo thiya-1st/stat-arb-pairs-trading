@@ -234,7 +234,7 @@ def run_backtest(
         end_date: str,
         benchmark_ticker: str,
         save_plots: bool = False
-    ) -> None:
+    ) -> pd.DataFrame:
     """
     Run the full pairs trading backtest pipeline for a list of cointegrated 
     pairs: computes spread, z-score, signals, daily PnL, performance metrics, 
@@ -251,8 +251,10 @@ def run_backtest(
         save_plots: if True, saves plots to ../figures/.
 
     Returns:
-        None. Prints performance metrics and displays plots for each pair.
+        metrics_df: a dataframe of performance metrics.
+        Displays plots for each pair.
     """
+    metrics_list = []
     benchmark_returns = calculate_benchmark_returns(benchmark_ticker, start_date, end_date)
 
     for pair in cointegrated_pairs:
@@ -267,8 +269,14 @@ def run_backtest(
         sharpe = calculate_sharpe(capital, daily_pnl)
         max_drawdown = calculate_max_drawdown(daily_pnl_cumsum)
         cagr = calculate_cagr(adj_close_df, capital, daily_pnl_cumsum)
-        print(f"Sharpe: {sharpe}")
-        print(f"Maximum drawdown: {max_drawdown}")
-        print(f"CAGR: {cagr}")
+        metrics_list.append({
+            "pair": f"{pair[0]}-{pair[1]}",
+            "sharpe": sharpe,
+            "max_drawdown": max_drawdown,
+            "cagr": cagr
+        })
 
         plot_strategy_vs_benchmark(capital, daily_pnl_cumsum, pair, benchmark_ticker, benchmark_returns, save_plots)
+
+    metrics_df = pd.DataFrame(metrics_list)
+    return metrics_df
